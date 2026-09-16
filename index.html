@@ -252,6 +252,7 @@ function update(dt) {
 }
 
 function drawFish(f) {
+  if (f.type.junk) { drawBoot(f); return; }
   const { type, x, y, dir } = f;
   const facing = f.speed >= 0 ? 1 : -1;
   ctx.save();
@@ -268,12 +269,67 @@ function drawFish(f) {
   ctx.lineTo(-type.w / 2 - 10, 8);
   ctx.closePath();
   ctx.fill();
-  if (!type.junk) {
-    ctx.fillStyle = '#0b1e2d';
-    ctx.beginPath();
-    ctx.arc(type.w / 2 - 6, -2, 2, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  ctx.fillStyle = '#0b1e2d';
+  ctx.beginPath();
+  ctx.arc(type.w / 2 - 6, -2, 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawBoot(f) {
+  const { x, y } = f;
+  const facing = f.speed >= 0 ? 1 : -1;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(facing, 1);
+
+  // boot body: shaft + toe
+  ctx.fillStyle = '#6b4a2f';
+  ctx.strokeStyle = '#3a2718';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(-14, -13);
+  ctx.lineTo(-2, -13);
+  ctx.lineTo(-2, 2);
+  ctx.lineTo(12, 2);
+  ctx.quadraticCurveTo(18, 2, 18, 8);
+  ctx.quadraticCurveTo(18, 13, 12, 13);
+  ctx.lineTo(-14, 13);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // pull tab at the top back
+  ctx.fillStyle = '#4a3220';
+  ctx.fillRect(-11, -17, 6, 5);
+
+  // sole
+  ctx.strokeStyle = '#2a1c10';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(-14, 13);
+  ctx.lineTo(11, 13);
+  ctx.stroke();
+
+  // eyelets
+  ctx.fillStyle = '#2e2e2e';
+  ctx.beginPath();
+  ctx.arc(-8, -8, 1.4, 0, Math.PI * 2);
+  ctx.arc(-8, -1, 1.4, 0, Math.PI * 2);
+  ctx.fill();
+
+  // hole in the toe with a few escaping bubbles, because it's old and busted
+  ctx.fillStyle = '#1f150c';
+  ctx.beginPath();
+  ctx.arc(9, 5, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(11, -2, 1.5, 0, Math.PI * 2);
+  ctx.arc(14, -8, 1, 0, Math.PI * 2);
+  ctx.stroke();
+
   ctx.restore();
 }
 
