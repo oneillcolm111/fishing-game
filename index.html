@@ -121,6 +121,9 @@ let running = false;
 let lastSpawn = 0;
 let elapsedMs = 0;
 let msgTimer = 0;
+let personState = 'idle'; // idle | celebrate | cry | jump
+let personTimer = 0;
+const PERSON_ANIM_MS = 1000;
 
 function pickFishType() {
   const total = FISH_TYPES.reduce((s, f) => s + f.weight, 0);
@@ -153,6 +156,8 @@ function resetGame() {
   lastSpawn = 0;
   elapsedMs = 0;
   msgTimer = 0;
+  personState = 'idle';
+  personTimer = 0;
   scoreEl.textContent = score;
   timeEl.textContent = timeLeft;
   msgEl.textContent = '';
@@ -220,9 +225,15 @@ function update(dt) {
         scoreEl.textContent = score;
         if (f.type.junk) {
           showMessage(`Ugh, ${f.type.name}! ${f.type.points} pts`);
+          personState = 'cry';
+        } else if (f.type.name === 'Salmon') {
+          showMessage(`Caught a ${f.type.name}! +${f.type.points} pts`);
+          personState = 'jump';
         } else {
           showMessage(`Caught a ${f.type.name}! +${f.type.points} pts`);
+          personState = 'celebrate';
         }
+        personTimer = PERSON_ANIM_MS;
         fishList = fishList.filter(x => x !== f);
         hook.caught = null;
       }
@@ -248,6 +259,11 @@ function update(dt) {
   if (msgTimer > 0) {
     msgTimer -= dt;
     if (msgTimer <= 0) msgEl.textContent = '';
+  }
+
+  if (personTimer > 0) {
+    personTimer -= dt;
+    if (personTimer <= 0) { personTimer = 0; personState = 'idle'; }
   }
 }
 
@@ -351,6 +367,95 @@ function drawMaggot(cx, cy, t) {
   ctx.restore();
 }
 
+function drawPerson() {
+  const px = BOAT_X - 16;
+  const feetY = WATER_TOP - 10;
+  const progress = personState === 'idle' ? 0 : 1 - Math.max(0, personTimer) / PERSON_ANIM_MS;
+
+  let bob = 0;
+  if (personState === 'jump') {
+    bob = -Math.sin(Math.min(progress, 1) * Math.PI) * 26;
+  } else if (personState === 'celebrate') {
+    bob = -Math.abs(Math.sin(Math.min(progress, 1) * Math.PI * 4)) * 5;
+  } else if (personState === 'cry') {
+    bob = 2;
+  }
+
+  ctx.save();
+  ctx.translate(px, feetY + bob);
+
+  // legs
+  ctx.strokeStyle = '#2b3a55';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  if (personState === 'jump') {
+    ctx.moveTo(-3, 0); ctx.lineTo(-8, -8);
+    ctx.moveTo(3, 0); ctx.lineTo(8, -8);
+  } else {
+    ctx.moveTo(-3, 0); ctx.lineTo(-5, -14);
+    ctx.moveTo(3, 0); ctx.lineTo(5, -14);
+  }
+  ctx.stroke();
+
+  // torso
+  ctx.fillStyle = '#d24b4b';
+  ctx.fillRect(-6, -30, 12, 16);
+
+  // arms (rod hand reaches toward the fixed line anchor point)
+  const handAbsX = hook.x, handAbsY = WATER_TOP - 4;
+  const rodLocalX = handAbsX - px, rodLocalY = handAbsY - (feetY + bob);
+  ctx.strokeStyle = '#d24b4b';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  if (personState === 'celebrate' || personState === 'jump') {
+    ctx.moveTo(4, -26); ctx.lineTo(15, -42);
+    ctx.moveTo(-4, -26); ctx.lineTo(-15, -42);
+  } else if (personState === 'cry') {
+    ctx.moveTo(4, -26); ctx.lineTo(9, -10);
+    ctx.moveTo(-4, -26); ctx.lineTo(-9, -10);
+  } else {
+    ctx.moveTo(-4, -26); ctx.lineTo(-9, -14);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.strokeStyle = '#8a5a2f';
+    ctx.moveTo(4, -26); ctx.lineTo(rodLocalX, rodLocalY);
+  }
+  ctx.stroke();
+
+  // head
+  ctx.fillStyle = '#f2c49b';
+  ctx.beginPath();
+  ctx.arc(0, personState === 'cry' ? -34 : -36, 6, 0, Math.PI * 2);
+  ctx.fill();
+
+  // face
+  ctx.strokeStyle = '#3a2a1a';
+  ctx.lineWidth = 1.2;
+  const headY = personState === 'cry' ? -34 : -36;
+  ctx.beginPath();
+  if (personState === 'cry') {
+    ctx.arc(0, headY + 4, 2.5, Math.PI, Math.PI * 2); // frown
+  } else if (personState === 'celebrate' || personState === 'jump') {
+    ctx.arc(0, headY + 2, 3, 0.15 * Math.PI, 0.85 * Math.PI); // big smile
+  } else {
+    ctx.arc(0, headY + 2, 2, 0.2 * Math.PI, 0.8 * Math.PI); // small smile
+  }
+  ctx.stroke();
+
+  // tears
+  if (personState === 'cry') {
+    ctx.fillStyle = '#6fc8ff';
+    const drop = (progress * 14) % 14;
+    ctx.beginPath();
+    ctx.arc(-3, headY + 6 + drop, 1.6, 0, Math.PI * 2);
+    ctx.arc(3, headY + 6 + (drop + 6) % 14, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
 function draw() {
   ctx.clearRect(0, 0, W, H);
 
@@ -367,6 +472,9 @@ function draw() {
   ctx.lineTo(BOAT_X - 28, WATER_TOP + 12);
   ctx.closePath();
   ctx.fill();
+
+  // person fishing in the boat
+  drawPerson();
 
   // fishing line
   ctx.strokeStyle = '#eaf6ff';
