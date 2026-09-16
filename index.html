@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Reel It In</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: #0b1e2d;
+    font-family: 'Trebuchet MS', Arial, sans-serif;
+    color: #eaf6ff;
+    user-select: none;
+  }
+  h1 { margin: 14px 0 4px; letter-spacing: 1px; }
+  #hud {
+    display: flex;
+    gap: 28px;
+    font-size: 18px;
+    margin-bottom: 8px;
+  }
+  #hud span { font-weight: bold; color: #ffd76e; }
+  canvas {
+    background: linear-gradient(to bottom, #7fd4ff 0%, #7fd4ff 15%, #0a6ea8 20%, #073f66 60%, #021b2e 100%);
+    border: 4px solid #123b52;
+    border-radius: 8px;
+    cursor: pointer;
+    display: block;
+  }
+  #msg {
+    margin-top: 10px;
+    height: 24px;
+    font-size: 16px;
+    color: #9fffb0;
+  }
+  #instructions {
+    margin-top: 6px;
+    font-size: 13px;
+    color: #7fa8c0;
+    text-align: center;
+    max-width: 640px;
+  }
+  #overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.75);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+  }
+  #overlay.show { display: flex; }
+  #overlay h2 { font-size: 36px; margin-bottom: 6px; }
+  #overlay button {
+    margin-top: 16px;
+    padding: 10px 24px;
+    font-size: 16px;
+    background: #ffd76e;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: bold;
+  }
+  #overlay button:hover { background: #ffe396; }
+</style>
+</head>
+<body>
+  <h1>🎣 Reel It In</h1>
+  <div id="hud">
+    <div>Score: <span id="score">0</span></div>
+    <div>Time: <span id="time">60</span>s</div>
+    <div>Best: <span id="best">0</span></div>
+  </div>
+  <canvas id="game" width="640" height="480"></canvas>
+  <div id="msg"></div>
+  <div id="instructions">Click / tap or press SPACE to drop your hook. Click again to reel it back up. Catch fish for points before time runs out — bigger, rarer fish are worth more but move faster. Watch out for the boot — it's junk!</div>
+
+  <div id="overlay">
+    <h2 id="overlayTitle">Time's Up!</h2>
+    <div id="overlayScore" style="font-size:20px;"></div>
+    <button id="restartBtn">Play Again</button>
+  </div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+const WATER_TOP = H * 0.18;
+
+const scoreEl = document.getElementById('score');
+const timeEl = document.getElementById('time');
+const bestEl = document.getElementById('best');
+const msgEl = document.getElementById('msg');
+const overlay = document.getElementById('overlay');
+const overlayTitle = document.getElementById('overlayTitle');
+const overlayScore = document.getElementById('overlayScore');
+const restartBtn = document.getElementById('restartBtn');
+
+let best = parseInt(localStorage.getItem('reelItInBest') || '0', 10);
+bestEl.textContent = best;
+
+const BOAT_X = W / 2;
+
+const FISH_TYPES = [
+  { name: 'Minnow',    color: '#c0e8ff', w: 26, h: 12, speedRange: [1.2, 2.2], points: 5,  weight: 40 },
+  { name: 'Perch',     color: '#ffb454', w: 34, h: 16, speedRange: [1.5, 2.6], points: 10, weight: 28 },
+  { name: 'Bass',      color: '#5fbf6a', w: 44, h: 20, speedRange: [1.8, 3.0], points: 20, weight: 16 },
+  { name: 'Salmon',    color: '#ff7f8a', w: 52, h: 22, speedRange: [2.2, 3.6], points: 35, weight: 9 },
+  { name: 'Golden Koi',color: '#ffd93d', w: 46, h: 20, speedRange: [3.0, 4.4], points: 60, weight: 5 },
+  { name: 'Old Boot',  color: '#8a6a4a', w: 30, h: 24, speedRange: [1.0, 1.8], points: -15, weight: 12, junk: true },
+];
+
+let fishList = [];
+let hook = { x: BOAT_X, y: WATER_TOP, dropping: false, reeling: false, caught: null, speed: 3.4 };
+let score = 0;
+let timeLeft = 60;
+let running = false;
+let lastSpawn = 0;
+let elapsedMs = 0;
+let msgTimer = 0;
+
+function pickFishType() {
+  const total = FISH_TYPES.reduce((s, f) => s + f.weight, 0);
+  let r = Math.random() * total;
+  for (const f of FISH_TYPES) {
+    if (r < f.weight) return f;
+    r -= f.weight;
+  }
+  return FISH_TYPES[0];
+}
+
+function spawnFish() {
+  const type = pickFishType();
+  const dir = Math.random() < 0.5 ? 1 : -1;
+  const y = WATER_TOP + 40 + Math.random() * (H - WATER_TOP - 80);
+  const speed = (type.speedRange[0] + Math.random() * (type.speedRange[1] - type.speedRange[0])) * dir;
+  fishList.push({
+    type, y, dir,
+    x: dir > 0 ? -type.w : W + type.w,
+    speed,
+    caught: false,
+  });
+}
+
+function resetGame() {
+  fishList = [];
+  score = 0;
+  timeLeft = 60;
+  hook = { x: BOAT_X, y: WATER_TOP, dropping: false, reeling: false, caught: null, speed: 3.4 };
+  lastSpawn = 0;
+  elapsedMs = 0;
+  msgTimer = 0;
+  scoreEl.textContent = score;
+  timeEl.textContent = timeLeft;
+  msgEl.textContent = '';
+  overlay.classList.remove('show');
+  running = true;
+  requestAnimationFrame(loop);
+}
+
+function showMessage(text, ms=1200) {
+  msgEl.textContent = text;
+  msgTimer = ms;
+}
+
+function toggleHook() {
+  if (!running) return;
+  if (hook.caught) return; // wait for reel-up to finish
+  if (!hook.dropping && !hook.reeling) {
+    hook.dropping = true;
+  } else if (hook.dropping) {
+    hook.dropping = false;
+    hook.reeling = true;
+  }
+}
+
+canvas.addEventListener('click', toggleHook);
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') { e.preventDefault(); toggleHook(); }
+});
+restartBtn.addEventListener('click', resetGame);
+
+function update(dt) {
+  elapsedMs += dt;
+  const difficulty = Math.min(1, elapsedMs / 45000);
+  const spawnInterval = 900 - difficulty * 400;
+
+  if (elapsedMs - lastSpawn > spawnInterval) {
+    lastSpawn = elapsedMs;
+    spawnFish();
+  }
+
+  // move fish
+  for (const f of fishList) {
+    if (f.caught) continue;
+    f.x += f.speed;
+  }
+  fishList = fishList.filter(f => f.caught || (f.x > -80 && f.x < W + 80));
+
+  // hook motion
+  if (hook.dropping) {
+    hook.y += hook.speed;
+    if (hook.y >= H - 20) { hook.y = H - 20; hook.dropping = false; hook.reeling = true; }
+  } else if (hook.reeling) {
+    hook.y -= hook.speed * (hook.caught ? 1.6 : 2.2);
+    if (hook.caught) {
+      hook.caught.x = hook.x;
+      hook.caught.y = hook.y;
+    }
+    if (hook.y <= WATER_TOP) {
+      hook.y = WATER_TOP;
+      hook.reeling = false;
+      if (hook.caught) {
+        const f = hook.caught;
+        score += f.type.points;
+        if (score < 0) score = 0;
+        scoreEl.textContent = score;
+        if (f.type.junk) {
+          showMessage(`Ugh, ${f.type.name}! ${f.type.points} pts`);
+        } else {
+          showMessage(`Caught a ${f.type.name}! +${f.type.points} pts`);
+        }
+        fishList = fishList.filter(x => x !== f);
+        hook.caught = null;
+      }
+    }
+  }
+
+  // collision check while dropping/reeling without catch
+  if (!hook.caught && (hook.dropping || hook.reeling)) {
+    for (const f of fishList) {
+      if (f.caught) continue;
+      const dx = Math.abs(f.x - hook.x);
+      const dy = Math.abs(f.y - hook.y);
+      if (dx < f.type.w / 2 + 6 && dy < f.type.h / 2 + 6) {
+        f.caught = true;
+        hook.caught = f;
+        hook.reeling = true;
+        hook.dropping = false;
+        break;
+      }
+    }
+  }
+
+  if (msgTimer > 0) {
+    msgTimer -= dt;
+    if (msgTimer <= 0) msgEl.textContent = '';
+  }
+}
+
+function drawFish(f) {
+  const { type, x, y, dir } = f;
+  const facing = f.speed >= 0 ? 1 : -1;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(facing, 1);
+  ctx.fillStyle = type.color;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, type.w / 2, type.h / 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // tail
+  ctx.beginPath();
+  ctx.moveTo(-type.w / 2, 0);
+  ctx.lineTo(-type.w / 2 - 10, -8);
+  ctx.lineTo(-type.w / 2 - 10, 8);
+  ctx.closePath();
+  ctx.fill();
+  if (!type.junk) {
+    ctx.fillStyle = '#0b1e2d';
+    ctx.beginPath();
+    ctx.arc(type.w / 2 - 6, -2, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  // sky already handled by CSS background under water line; draw waterline
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx.fillRect(0, WATER_TOP - 2, W, 3);
+
+  // boat
+  ctx.fillStyle = '#6b3f2a';
+  ctx.beginPath();
+  ctx.moveTo(BOAT_X - 40, WATER_TOP - 10);
+  ctx.lineTo(BOAT_X + 40, WATER_TOP - 10);
+  ctx.lineTo(BOAT_X + 28, WATER_TOP + 12);
+  ctx.lineTo(BOAT_X - 28, WATER_TOP + 12);
+  ctx.closePath();
+  ctx.fill();
+
+  // fishing line
+  ctx.strokeStyle = '#eaf6ff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(hook.x, WATER_TOP - 4);
+  ctx.lineTo(hook.x, hook.y);
+  ctx.stroke();
+
+  // fish
+  for (const f of fishList) drawFish(f);
+
+  // hook
+  ctx.strokeStyle = '#ffd76e';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(hook.x, hook.y + 6, 6, 0.2 * Math.PI, 1.8 * Math.PI);
+  ctx.stroke();
+}
+
+let lastTs = null;
+function loop(ts) {
+  if (!running) return;
+  if (lastTs === null) lastTs = ts;
+  const dt = ts - lastTs;
+  lastTs = ts;
+
+  update(dt);
+  draw();
+
+  requestAnimationFrame(loop);
+}
+
+setInterval(() => {
+  if (!running) return;
+  timeLeft -= 1;
+  timeEl.textContent = Math.max(0, timeLeft);
+  if (timeLeft <= 0) {
+    running = false;
+    if (score > best) {
+      best = score;
+      localStorage.setItem('reelItInBest', String(best));
+    }
+    bestEl.textContent = best;
+    overlayTitle.textContent = "Time's Up!";
+    overlayScore.textContent = `You scored ${score} points. Best: ${best}`;
+    overlay.classList.add('show');
+  }
+}, 1000);
+
+resetGame();
+</script>
+</body>
+</html>
