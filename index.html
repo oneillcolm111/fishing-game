@@ -2,9 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Reel It In</title>
 <style>
   * { box-sizing: border-box; }
+  html, body {
+    width: 100%;
+    overflow-x: hidden;
+  }
   body {
     margin: 0;
     display: flex;
@@ -14,8 +19,9 @@
     font-family: 'Trebuchet MS', Arial, sans-serif;
     color: #eaf6ff;
     user-select: none;
+    padding: 0 10px;
   }
-  h1 { margin: 14px 0 4px; letter-spacing: 1px; }
+  h1 { margin: 14px 0 4px; letter-spacing: 1px; font-size: clamp(20px, 6vw, 28px); }
   #hud {
     display: flex;
     gap: 22px;
@@ -31,6 +37,11 @@
     border-radius: 8px;
     cursor: pointer;
     display: block;
+    width: 100%;
+    max-width: 640px;
+    height: auto;
+    aspect-ratio: 4 / 3;
+    touch-action: manipulation;
   }
   #msg {
     margin-top: 10px;
